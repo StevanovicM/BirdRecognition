@@ -2,4 +2,3 @@ streamlit
 keras
 pillow 
 pathlib
-os.path
