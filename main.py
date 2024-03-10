@@ -1,10 +1,11 @@
 # Import Data Science Libraries
+from helper_functions import walk_through_dir, create_tensorboard_callback
 import keras.callbacks
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, KFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -15,22 +16,27 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from keras import layers, Model
 from keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
 from keras.layers import Dense, Dropout
-from keras.callbacks import EarlyStopping,ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras.optimizers import Adam
 import keras_tuner as kt
+from keras.applications import MobileNetV2
+from keras.layers.experimental import preprocessing
 
 # System libraries
 from pathlib import Path
 import os.path
+import random
 
 # Visualization Libraries
 import seaborn as sns
+import matplotlib.cm as cm
+import cv2
 
 sns.set_style('darkgrid')
 
 # Metrics
-
-from helper_functions import walk_through_dir, create_tensorboard_callback
+from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score
+import itertools
 
 # Load and transform data
 BATCH_SIZE = 32
@@ -187,7 +193,7 @@ X_test_pca = pca.transform(X_test_scaled)
 print("Instantiating the models")
 knn = KNeighborsClassifier(n_neighbors=5)
 rf = RandomForestClassifier(n_estimators=100, random_state=42)
-logreg = LogisticRegression(max_iter=1000, random_state=42)
+logreg = LogisticRegression(max_iter=10000, random_state=42)
 
 # Fit the models
 print("Fitting the models")
@@ -199,17 +205,17 @@ logreg.fit(X_train_pca, y_train)
 k = 5
 
 # Perform cross-validation for k-NN
-cross_val_scores_knn = cross_val_score(knn, X_train_pca, y_train, cv=k)
+cross_val_scores_knn = cross_val_score(knn, X_train_pca, y_train, cv=k, scoring='accuracy')
 print(f"k-NN cross-validation accuracy scores: {cross_val_scores_knn}")
 print(f"Mean k-NN cross-validation accuracy: {cross_val_scores_knn.mean()}")
 
 # Perform cross-validation for Random Forest
-cross_val_scores_rf = cross_val_score(rf, X_train_pca, y_train, cv=k)
+cross_val_scores_rf = cross_val_score(rf, X_train_pca, y_train, cv=k, scoring='accuracy')
 print(f"Random Forest cross-validation accuracy scores: {cross_val_scores_rf}")
 print(f"Mean Random Forest cross-validation accuracy: {cross_val_scores_rf.mean()}")
 
 # Perform cross-validation for Logistic Regression
-cross_val_scores_logistic = cross_val_score(logreg, X_train_pca, y_train, cv=k)
+cross_val_scores_logistic = cross_val_score(logreg, X_train_pca, y_train, cv=k, scoring='accuracy')
 print(f"Logistic Regression cross-validation accuracy scores: {cross_val_scores_logistic}")
 print(f"Mean Logistic Regression cross-validation accuracy: {cross_val_scores_logistic.mean()}")
 
@@ -226,7 +232,7 @@ best_knn = knn_gs.best_estimator_
 # For Random Forest, GridSearchCV can be used to tune parameters like the number of trees and depth of each tree:
 rf_params = {'n_estimators': [50, 100, 200], 'max_depth': [10, 20, 30, None]}
 rf_gs = GridSearchCV(RandomForestClassifier(random_state=42), rf_params, cv=5)
-rf_gs.fit(X_train_pca)
+rf_gs.fit(X_train_pca, y_train)
 
 best_rf = rf_gs.best_estimator_
 
@@ -237,6 +243,20 @@ logistic_gs.fit(X_train_pca, y_train)
 
 best_logistic = logistic_gs.best_estimator_
 
+
+# Cross-validation after hyperparameter tuning
+cross_val_scores_knn = cross_val_score(best_knn, X_train_pca, y_train, cv=5, scoring='accuracy')
+print(f"k-NN cross-validation accuracy scores after hyperparameter tuning: {cross_val_scores_knn}")
+print(f"Mean k-NN cross-validation accuracy after hyperparameter tuning:: {cross_val_scores_knn.mean()}")
+
+cross_val_scores_rf = cross_val_score(best_rf, X_train_pca, y_train, cv=k, scoring='accuracy')
+print(f"Random Forest cross-validation accuracy scores after hyperparameter tuning: {cross_val_scores_rf}")
+print(f"Mean Random Forest cross-validation accuracy after hyperparameter tuning: {cross_val_scores_rf.mean()}")
+
+# Perform cross-validation for Logistic Regression
+cross_val_scores_logistic = cross_val_score(best_logistic, X_train_pca, y_train, cv=k, scoring='accuracy')
+print(f"Logistic Regression cross-validation accuracy scores after hyperparameter tuning: {cross_val_scores_logistic}")
+print(f"Mean Logistic Regression cross-validation accuracy after hyperparameter tuning: {cross_val_scores_logistic.mean()}")
 
 # THE CNN MODEL
 
@@ -313,3 +333,72 @@ tuner.search(train_images, validation_data=val_images, epochs=10, callbacks=[ker
 
 best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
 best_model = tuner.get_best_models(num_models=1)[0]
+
+# Evaluating the models
+
+# Predictions on the test set
+y_pred_knn = best_knn.predict(X_test_pca)
+y_pred_rf = best_rf.predict(X_test_pca)
+y_pred_logistic = best_logistic.predict(X_test_pca)
+
+# Evaluation reports for the traditional models
+class_names = le.classes_
+report_knn = classification_report(y_test, y_pred_knn, target_names=class_names)
+report_rf = classification_report(y_test, y_pred_rf, target_names=class_names)
+report_logistic = classification_report(y_test, y_pred_logistic, target_names=class_names)
+
+print("k-NN Classification Report:\n", report_knn)
+print("Random Forest Classification Report:\n", report_rf)
+print("Logistic Regression Classification Report:\n", report_logistic)
+
+# For the EfficientNetB0 model
+
+results = best_model.evaluate(test_images, verbose=0)
+
+print("    Test Loss: {:.5f}".format(results[0]))
+print("Test Accuracy: {:.2f}%".format(results[1] * 100))
+
+# Predict on the test data
+y_pred_prob = best_model.predict(test_images)
+y_pred = np.argmax(y_pred_prob, axis=1)
+
+# Get true labels
+y_true = test_images.classes
+
+precision = precision_score(y_true, y_pred, average='weighted')
+recall = recall_score(y_true, y_pred, average='weighted')
+f1 = f1_score(y_true, y_pred, average='weighted')
+
+print("EfficientNetB0 Model Metrics:")
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1)
+
+# Visualizing loss curves
+
+accuracy = history.history['accuracy']
+val_accuracy = history.history['val_accuracy']
+
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs = range(len(accuracy))
+plt.plot(epochs, accuracy, 'b', label='Training accuracy')
+plt.plot(epochs, val_accuracy, 'r', label='Validation accuracy')
+
+plt.title('Training and validation accuracy')
+plt.legend()
+plt.figure()
+plt.plot(epochs, loss, 'b', label='Training loss')
+plt.plot(epochs, val_loss, 'r', label='Validation loss')
+
+plt.title('Training and validation loss')
+plt.legend()
+plt.show()
+
+y_test = list(test_df.Label)
+print(classification_report(y_test, y_pred_prob))
+
+report = classification_report(y_test, y_pred_prob, output_dict=True)
+df = pd.DataFrame(report).transpose()
+print(df)
