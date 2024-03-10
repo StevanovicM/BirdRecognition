@@ -1,3 +1,5 @@
 streamlit
-tensorflow>=2.0
-pillow  # If you're using PIL or Image from PIL
+keras
+pillow 
+pathlib
+os.path

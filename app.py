@@ -1,8 +1,6 @@
-from tensorflow import _tf_uses_legacy_keras
 import keras.models
 import streamlit as st
 from PIL import Image
-import tensorflow as tf
 import numpy as np
 from pathlib import Path
 import os.path
