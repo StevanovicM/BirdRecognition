@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 # Tensorflow Libraries
 from keras import layers, Model
+from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
 from keras.layers import Dense, Dropout
 from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
@@ -55,18 +56,6 @@ labels = pd.Series(labels, name='Label')
 
 # Concatenate filepaths and labels
 image_df = pd.concat([filepaths, labels], axis=1)
-
-# Visualizing images from the dataset
-# Display 16 picture of the dataset with their labels
-random_index = np.random.randint(0, len(image_df), 16)
-fig, axes = plt.subplots(nrows=4, ncols=4, figsize=(10, 10),
-                        subplot_kw={'xticks': [], 'yticks': []})
-
-for i, ax in enumerate(axes.flat):
-    ax.imshow(plt.imread(image_df.Filepath[random_index[i]]))
-    ax.set_title(image_df.Label[random_index[i]])
-plt.tight_layout()
-plt.show()
 
 # Data Preprocessing
 #The data will be split into three different categories: Training, Validation and Testing.
@@ -138,9 +127,11 @@ augment = tf.keras.Sequential([
 # Three callbacks will be utilized to monitor the training.
 # These are: Model Checkpoint, Early Stopping, Tensorboard callback. The summary of the model hyperparameter is shown as follows:
 # Batch size: 32
-# Epochs: 50
+# Epochs: 100
 # Input Shape: (224, 224, 3)
 # Output layer: 525
+
+
 
 # Load the pretrained model
 print("Loading the CNN model")
@@ -153,12 +144,19 @@ pretrained_model = tf.keras.applications.efficientnet.EfficientNetB0(
 
 pretrained_model.trainable = False
 
+checkpoint_dir = "birds_classification_model_checkpoint"
+checkpoint_model_path = os.path.join(checkpoint_dir, "birds_classification_model.h5")
+
+if os.path.exists(checkpoint_model_path):
+    print("Loading weights from the previous checkpoint")
+    pretrained_model = load_model(checkpoint_model_path)
+
 # Create checkpoint callback
 checkpoint_path = "birds_classification_model_checkpoint"
-checkpoint_callback = ModelCheckpoint(checkpoint_path,
-                                      save_weights_only=True,
+checkpoint_callback = ModelCheckpoint(checkpoint_model_path,
+                                      save_weights_only=False,
                                       monitor="val_accuracy",
-                                      save_best_only=True)
+                                      save_best_only=False)
 
 # Setup EarlyStopping callback to stop training if model's val_loss doesn't improve for 3 epochs
 early_stopping = EarlyStopping(monitor="val_loss", # watch the val loss metric
@@ -179,7 +177,7 @@ x = Dropout(0.45)(x)
 
 outputs = Dense(525, activation='softmax')(x)
 
-model = Model(inputs=inputs, outputs=outputs)
+model = load_model(checkpoint_model_path)
 
 model.compile(
     optimizer=Adam(0.0001),
@@ -192,7 +190,7 @@ history = model.fit(
     steps_per_epoch=len(train_images),
     validation_data=val_images,
     validation_steps=len(val_images),
-    epochs=50,
+    epochs=100,
     callbacks=[
         early_stopping,
         create_tensorboard_callback("training_logs",
@@ -202,31 +200,19 @@ history = model.fit(
     ]
 )
 
-tuner = kt.Hyperband(
-    model,
-    objective='val_accuracy',
-    max_epochs=10,
-    factor=3,
-    directory='archive',
-    project_name='intro_to_kt'
-)
-
-tuner.search(train_images, validation_data=val_images, epochs=10, callbacks=[keras.callbacks.EarlyStopping(patience=1)])
-
-best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
-best_model = tuner.get_best_models(num_models=1)[0]
+print("Evaluating model")
 
 # Evaluating the models
 
 # For the EfficientNetB0 model
 
-results = best_model.evaluate(test_images, verbose=0)
+results = model.evaluate(test_images, verbose=0)
 
 print("    Test Loss: {:.5f}".format(results[0]))
 print("Test Accuracy: {:.2f}%".format(results[1] * 100))
 
 # Predict on the test data
-y_pred_prob = best_model.predict(test_images)
+y_pred_prob = model.predict(test_images)
 y_pred = np.argmax(y_pred_prob, axis=1)
 
 # Get true labels
@@ -263,9 +249,34 @@ plt.title('Training and validation loss')
 plt.legend()
 plt.show()
 
-y_test = list(test_df.Label)
-print(classification_report(y_test, y_pred_prob))
+# Making predictions on the Test Data
 
-report = classification_report(y_test, y_pred_prob, output_dict=True)
-df = pd.DataFrame(report).transpose()
-print(df)
+# Predict the label of the test_images
+pred = model.predict(test_images)
+pred = np.argmax(pred,axis=1)
+
+# Map the label
+labels = (train_images.class_indices)
+labels = dict((v,k) for k,v in labels.items())
+pred = [labels[k] for k in pred]
+
+# Display the result
+print(f'The first 5 predictions: {pred[:5]}')
+
+# Display 25 random pictures from the dataset with their labels
+random_index = np.random.randint(0, len(test_df) - 1, 15)
+fig, axes = plt.subplots(nrows=3, ncols=5, figsize=(25, 15),
+                        subplot_kw={'xticks': [], 'yticks': []})
+
+for i, ax in enumerate(axes.flat):
+    ax.imshow(plt.imread(test_df.Filepath.iloc[random_index[i]]))
+    if test_df.Label.iloc[random_index[i]] == pred[random_index[i]]:
+        color = "green"
+    else:
+        color = "red"
+    ax.set_title(f"True: {test_df.Label.iloc[random_index[i]]}\nPredicted: {pred[random_index[i]]}", color=color)
+plt.show()
+plt.tight_layout()
+
+y_test = list(test_df.Label)
+print(classification_report(y_test, pred))
