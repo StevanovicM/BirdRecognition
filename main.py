@@ -1,68 +1,60 @@
-# Import Data Science Libraries
+# Data Science Biblioteke
 from helper_functions import walk_through_dir, create_tensorboard_callback
-import keras.callbacks
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
 
-# Tensorflow Libraries
-from keras import layers, Model
+# Tensorflow Biblioteke
+from keras import layers
 from keras.models import load_model
-from keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
+from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Dropout
 from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras.optimizers import Adam
-import keras_tuner as kt
 
-# System libraries
+# Sistemkse Biblioteke
 from pathlib import Path
 import os.path
 
-# Visualization Libraries
+# Biblioteke za vizualizaciju
 import seaborn as sns
 
 sns.set_style('darkgrid')
 
-# Metrics
+# Metrike
 from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
 
-# Load and transform data
+# Učitavamo i transformišemo podatke
 BATCH_SIZE = 32
 TARGET_SIZE = (224, 224)
 
 dataset='archive/train'
 walk_through_dir(dataset)
 
-# Placing data into a Dataframe
-# The first column filepaths contains the file path location of each individual images.
-# The second column labels, on the other hand, contains the class label of the corresponding image from the file path
+# Postavljanje podataka u DataFrame
+# Prva kolona filepaths sadrži lokaciju putanje datoteke svake pojedinačne slike.
+# Druga kolona labels, sadrži oznaku klase odgovarajuće slike sa putanje datoteke.
 
 image_dir = Path(dataset)
 
-# Get filepaths and labels
+# Skupljanje filepaths i labels variabli
 filepaths = list(image_dir.glob(r'**/*.JPG')) + list(image_dir.glob(r'**/*.jpg')) + list(image_dir.glob(r'**/*.png')) + list(image_dir.glob(r'**/*.png'))
-
 labels = list(map(lambda x: os.path.split(os.path.split(x)[0])[1], filepaths))
 
 filepaths = pd.Series(filepaths, name='Filepath').astype(str)
 labels = pd.Series(labels, name='Label')
 
-# Concatenate filepaths and labels
+# Konkatenacija filepaths i labels
 image_df = pd.concat([filepaths, labels], axis=1)
 
-# Data Preprocessing
-#The data will be split into three different categories: Training, Validation and Testing.
-# The training data will be used to train the deep learning CNN model and its parameters will be fine tuned with the validation data.
-# Finally, the performance of the data will be evaluated using the test data(data the model has not previously seen).
+# Preprocessing podataka
+# Podaci će biti razdvojeni u 3 seta: Trening, Validacija i Testiranje.
+# Podaci o obuci će se koristiti za obuku CNN modela dubokog učenja i njegovi parametri će biti fino podešeni sa podacima o validaciji.
+# Konačno, performanse podataka će biti procenjene korišćenjem testnih podataka (podaci koje model ranije nije video).
 
-# Separate in train and test data
+# Deljenje podataka na train i test
 train_df, test_df = train_test_split(image_df, test_size=0.2, shuffle=True, random_state=42)
 
 train_generator = ImageDataGenerator(
@@ -74,7 +66,7 @@ test_generator = ImageDataGenerator(
     preprocessing_function=tf.keras.applications.efficientnet.preprocess_input,
 )
 
-# Split the data into three categories.
+# Deljenje slika u 3 kategorije
 train_images = train_generator.flow_from_dataframe(
     dataframe=train_df,
     x_col='Filepath',
@@ -112,7 +104,7 @@ test_images = test_generator.flow_from_dataframe(
     shuffle=False
 )
 
-# Data Augmentation Step
+# Korak augmentacije podataka
 augment = tf.keras.Sequential([
   layers.experimental.preprocessing.Resizing(224,224),
   layers.experimental.preprocessing.Rescaling(1./255),
@@ -122,18 +114,16 @@ augment = tf.keras.Sequential([
   layers.experimental.preprocessing.RandomContrast(0.1),
 ])
 
-# Training the model
-# The model images will be subjected to a pre-trained CNN model called EfficientNetB0.
-# Three callbacks will be utilized to monitor the training.
-# These are: Model Checkpoint, Early Stopping, Tensorboard callback. The summary of the model hyperparameter is shown as follows:
-# Batch size: 32
-# Epochs: 100
-# Input Shape: (224, 224, 3)
-# Output layer: 525
+# Treniranje modela
+# Slike modela će biti podvrgnute unapred obučenom CNN modelu pod nazivom EfficientNetB0.
+# Tri callbacka će se koristiti za praćenje obuke.
+# To su: Model Checkpoint, Rano zaustavljanje, Tensorboard callback. Sažetak hiperparametra modela je prikazan na sledeći način:
+# Veličina batcha: 32
+# Epohe: 100
+# Oblik inputa: (224, 224, 3)
+# Output sloj: 525
 
-
-
-# Load the pretrained model
+# Učitavanje predobučenog CNN modela
 print("Loading the CNN model")
 pretrained_model = tf.keras.applications.efficientnet.EfficientNetB0(
     input_shape=(224, 224, 3),
@@ -151,21 +141,22 @@ if os.path.exists(checkpoint_model_path):
     print("Loading weights from the previous checkpoint")
     pretrained_model = load_model(checkpoint_model_path)
 
-# Create checkpoint callback
+# Kreairanje checkpointa
 checkpoint_path = "birds_classification_model_checkpoint"
 checkpoint_callback = ModelCheckpoint(checkpoint_model_path,
                                       save_weights_only=False,
                                       monitor="val_accuracy",
                                       save_best_only=False)
 
-# Setup EarlyStopping callback to stop training if model's val_loss doesn't improve for 3 epochs
-early_stopping = EarlyStopping(monitor="val_loss", # watch the val loss metric
+# Podešavanje EarlyStopping callbacka da zaustavi trening ako se modelova val_loss metrika ne poboljša za 3 epohe
+early_stopping = EarlyStopping(monitor="val_loss", # pratimo val loss metriku
                                patience=5,
-                               restore_best_weights=True) # if val loss decreases for 3 epochs in a row, stop training
+                               restore_best_weights=True) # ako se val loss smanji za 3 epohe zaredom, zaustavi trening
 
+# Smanjenje stope učenja ukoliko se metrike ne budu poboljšavale
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=1e-6)
 
-# Training the model
+# Treniranje modela
 inputs = pretrained_model.input
 x = augment(inputs)
 
@@ -202,20 +193,17 @@ history = model.fit(
 
 print("Evaluating model")
 
-# Evaluating the models
-
-# For the EfficientNetB0 model
-
+# Evaluacija modela
 results = model.evaluate(test_images, verbose=0)
 
 print("    Test Loss: {:.5f}".format(results[0]))
 print("Test Accuracy: {:.2f}%".format(results[1] * 100))
 
-# Predict on the test data
+# Predviđanje na test skupu podataka
 y_pred_prob = model.predict(test_images)
 y_pred = np.argmax(y_pred_prob, axis=1)
 
-# Get true labels
+# Postavljanje pravih klasa
 y_true = test_images.classes
 
 precision = precision_score(y_true, y_pred, average='weighted')
@@ -227,7 +215,7 @@ print("Precision:", precision)
 print("Recall:", recall)
 print("F1 Score:", f1)
 
-# Visualizing loss curves
+# Vizualizacija loss krivih
 
 accuracy = history.history['accuracy']
 val_accuracy = history.history['val_accuracy']
@@ -249,21 +237,19 @@ plt.title('Training and validation loss')
 plt.legend()
 plt.show()
 
-# Making predictions on the Test Data
-
-# Predict the label of the test_images
+# Predviđanje klasa test slika
 pred = model.predict(test_images)
 pred = np.argmax(pred,axis=1)
 
-# Map the label
+# Mapiranje labela
 labels = (train_images.class_indices)
 labels = dict((v,k) for k,v in labels.items())
 pred = [labels[k] for k in pred]
 
-# Display the result
+# Prikazivanje rezultata
 print(f'The first 5 predictions: {pred[:5]}')
 
-# Display 25 random pictures from the dataset with their labels
+# Prikazivanje nasumičnih 15 slika sa njihovim klasama
 random_index = np.random.randint(0, len(test_df) - 1, 15)
 fig, axes = plt.subplots(nrows=3, ncols=5, figsize=(25, 15),
                         subplot_kw={'xticks': [], 'yticks': []})
