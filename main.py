@@ -1,25 +1,24 @@
 # Data Science Biblioteke
-from helper_functions import walk_through_dir, create_tensorboard_callback
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
-
-# Tensorflow Biblioteke
-from keras import layers
-from keras.models import load_model
-from keras.preprocessing.image import ImageDataGenerator
-from keras.layers import Dense, Dropout
-from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from keras.optimizers import Adam
-
+import os.path
 # Sistemkse Biblioteke
 from pathlib import Path
-import os.path
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 # Biblioteke za vizualizaciju
 import seaborn as sns
+import tensorflow as tf
+# Tensorflow Biblioteke
+from keras import layers
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.layers import Dense, Dropout
+from keras.models import load_model
+from keras.preprocessing.image import ImageDataGenerator
+from sklearn.model_selection import train_test_split
+from tensorflow import keras
+
+from helper_functions import walk_through_dir, create_tensorboard_callback
 
 sns.set_style('darkgrid')
 
@@ -171,7 +170,7 @@ outputs = Dense(525, activation='softmax')(x)
 model = load_model(checkpoint_model_path)
 
 model.compile(
-    optimizer=Adam(0.0001),
+    optimizer=keras.optimizers.Adam(0.0001),
     loss='categorical_crossentropy',
     metrics=['accuracy']
 )
